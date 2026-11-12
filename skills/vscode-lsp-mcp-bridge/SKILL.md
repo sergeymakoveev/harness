@@ -7,6 +7,7 @@ description: >-
   code actions, and formatting. Do not use for non-code tasks such as ordinary
   document editing.
 metadata:
+  version: 1.0.0
   source: https://github.com/AlwaysHC/vscode-lsp-mcp-bridge/tree/main
 ---
 
@@ -20,6 +21,12 @@ Use `vscode_lsp` for semantic evidence from the language providers in the open V
 - For a concrete declared symbol, method signature, or known source position, use the matching semantic tool before `rg`, `grep`, shell search, or raw file search for that symbol or its relationships.
 - For descriptive concepts, literals, comments, markup, or serialized field names, use targeted text search directly. `workspace_symbols` searches declared names, not arbitrary source text.
 - Call `semantic_navigation_guide` only when unsure which semantic tool fits. It is not a mandatory first action.
+
+## Preconditions
+
+- Use the configured bridge with VS Code running, the target workspace open, and the relevant language extension active. Installation and client configuration are separate tasks when requested.
+- Check that the needed `vscode_lsp` tools are available in the current session. If the bridge is unavailable, use the fallback rules below and report that semantic validation was not possible.
+- External MCP clients require their own connection configuration. Treat bearer tokens and copied client configurations as sensitive; never print or commit them.
 
 ## Tool selection
 
@@ -39,11 +46,15 @@ Names below omit the MCP server prefix. Follow the schemas available in the curr
 | Call graph or type hierarchy by name                                      | `call_hierarchy_for_symbol`, `type_hierarchy_for_symbol`                                 |
 | Call graph or type hierarchy at a position                                | `call_hierarchy`, `type_hierarchy`                                                       |
 | Language errors and warnings                                              | `diagnostics`                                                                            |
+| Signatures, parameters, or inferred hints                                 | `signature_help`, `inlay_hints`                                                          |
+| Bridge API surfaces and documented limitations                            | `language_capabilities`                                                                  |
 | Rename eligibility and preview                                            | `prepare_rename`, `preview_rename`                                                       |
 | Code actions or source actions                                            | `code_actions`, `organize_imports`, `fix_all`                                            |
 | Formatting                                                                | `format_document`, `format_range`, `format_on_type`                                      |
 
 When only the symbol name is known, prefer a task-shaped named-symbol tool. Use `workspace_symbols` or `document_symbols` to locate or disambiguate declarations when needed. For a known position, pass `file`, `line`, and `column`; editor coordinates are **1-based**.
+
+Keep queries narrow and graph depth/node limits bounded to the question. `language_capabilities` describes bridge API surfaces; it does not establish that a particular language provider is active. Confirm provider behavior through the relevant semantic request.
 
 ## Caveats and ambiguous results
 
@@ -52,18 +63,22 @@ When only the symbol name is known, prefer a task-shaped named-symbol tool. Use 
 - If a namespace has no children, inspect sibling roots and try `workspace_symbols` or a named-symbol tool before treating semantic lookup as failed.
 - If a named-symbol tool returns `resolutionStatus: ambiguous`, retry with `file`, `containerName`, or `kind`. Do not implicitly select its first candidate.
 - A routing ambiguity or a path resolved in another workspace is not a language-provider failure. Retry the semantic tool with an absolute path or an exact relative path unique among open workspaces before announcing or using a fallback.
+- Established external-client sessions remain pinned to their initial workspace, while explicit unambiguous paths can route an individual call. If changing the default workspace for future sessions is required, use `GA - LSP MCP Bridge: Route Gateway To This Workspace`; it does not move an existing session.
 - If refined semantic queries remain empty, report what those queries did not find. Do not repeat them without new information or claim that the symbol cannot exist elsewhere in the project.
 
 ## Source inspection and fallback
 
-After semantic lookup identifies the target, read the relevant source when implementation text is needed. This is normal source inspection, not an LSP fallback.
+Use returned `file`, `line`, `column`, and `sourceLine` directly for follow-up queries and concise evidence. After semantic lookup identifies the target, read the relevant source when implementation text is needed. This is normal source inspection, not an LSP fallback.
 
 For a semantic question, fall back to text search only when the bridge is unavailable or the language provider fails or explicitly does not support the requested operation. Evidence includes an unavailable MCP tool, a connection error, or an explicit provider error or unsupported-operation response. State the fallback and its reason. An empty query result, an invalid request, or an ambiguous workspace path does not establish provider failure.
 
 Successful semantic navigation does not need a redundant `rg` cross-check. If the user separately requests textual occurrences, perform that as a text-search task.
 
+Avoid duplicating the same query across other indexing tools. Use a second system to answer a different question or recover from an identified limitation.
+
 ## Changes and result handling
 
+- Read-only analysis does not require write tools. Inspect available edit previews before applying changes, and do not enable write tools automatically as part of navigation or review.
 - Use `prepare_rename` and `preview_rename` to inspect a rename. `rename_symbol` refuses `apply: true`; perform the full semantic rename in VS Code. Do not apply only the visible subset of a generic `WorkspaceEdit`, which can omit hidden operations.
 - Applying supported formatting or completions requires `vscodeLspMcpBridge.enableWriteTools` and per-operation VS Code approval. Executing provider commands through code actions requires explicit `executeCommand: true` and a separate approval. Respect those bridge requirements when carrying out an authorized edit.
 - Report concrete paths as `path:line`. Distinguish definitions, references, and call sites. Disclose truncated results or graph depth limits; a partial graph does not prove that other relationships are absent.
@@ -87,3 +102,4 @@ Request: “Who calls `SaveAsync`?” Only the method name is known.
 - Local policy basis: [draft AGENTS.md section](SKILL.draft.md).
 - Tool contracts and limitations: [upstream tool catalog](https://github.com/AlwaysHC/vscode-lsp-mcp-bridge/blob/main/docs/TOOLS.md).
 - Workspace and language-provider requirements: [upstream README](https://github.com/AlwaysHC/vscode-lsp-mcp-bridge).
+- External-client configuration and workspace routing: [upstream client setup](https://github.com/AlwaysHC/vscode-lsp-mcp-bridge/blob/main/docs/CLIENTS.md).
